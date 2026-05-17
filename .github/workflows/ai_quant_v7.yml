@@ -1,57 +1,79 @@
-name: AI Quant V7 Daily Analyzer & CSV Generator
+name: AI Quant V7 Daily Bot
 
 on:
   schedule:
-    # 매일 월요일~금요일 한국 시간(KST) 저녁 6시 30분에 정기 실행 (UTC 09:30)
+    # 🌟 1. 새벽 6시 05분 (KST) - 전 종목 딥스캔 및 CSV 데이터 굽기
+    - cron: '05 21 * * 0-4'
+    # 🌟 2. 아침 8시 33분 (KST) - 장 시작 전 스윙 핵심 타깃 디스코드 알림
+    - cron: '33 23 * * 0-4'
+    # 🌟 3. 저녁 6시 30분 (KST) - 장 마감 결과 복기 및 모의투자 장부 기록
     - cron: '30 9 * * 1-5'
-  workflow_dispatch: # 깃허브 웹사이트에서 수동으로 즉시 실행하고 싶을 때 사용하는 버튼 활성화
+  
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '강제 실행할 모드를 선택하세요'
+        required: true
+        default: 'morning_scan'
+        type: choice
+        options:
+          - morning_scan
+          - morning_alert
+          - afternoon
 
 jobs:
-  analyze_and_report:
+  run-bot:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
-    - name: 1. 깃허브 저장소 코드 체크아웃
-      uses: actions/checkout@v3
-      with:
-        persist-credentials: true # CSV 자동 저장을 위해 쓰기 권한 유지
+    - name: 📂 1. 저장소 체크아웃
+      uses: actions/checkout@v4
 
-    - name: 2. 파이썬 환경 설정 (Python 3.10)
-      uses: actions/setup-python@v4
+    - name: 🐍 2. Python 3.10 환경 설정
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
-        cache: 'pip' # 패키지 다운로드 속도 향상을 위한 캐싱
+        cache: 'pip'
 
-    - name: 3. 필수 라이브러리 및 퀀트 TA 엔진 설치
+    - name: 📦 3. 필수 라이브러리 설치
       run: |
         python -m pip install --upgrade pip
-        # 🌟 PyTorch CPU 가벼운 버전 명시적 선행 설치
         pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-        # 🌟 에러를 뿜었던 FinanceDataReader와 수집에 필요한 lxml/bs4를 정확한 규격명으로 강제 주입
         pip install finance-datareader beautifulsoup4 lxml pandas numpy ta scikit-learn lightgbm joblib holidays requests
 
-    - name: 4. AI Quant V7 분석 엔진 가동 & CSV 리포트 생성
-      env:
-        # 디스코드 웹훅 주소 및 필요한 보안 키가 있다면 여기에 연동합니다.
-        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        # LLAMA3 등의 API를 쓰신다면 아래 주석을 풀고 레포지토리 세크릿에 등록하시면 됩니다.
-        # LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
-      run: |
-        # 🌟 V7 봇을 실행하여 Naver 금융 수집 -> 14개 피처 가공 -> CSV 저장 -> 디스코드 전송 프로세스 수행
-        python discord_alert.py
+    - name: 🌅 4-1. [자동] 새벽 스캔 및 CSV 굽기 (KST 06:05)
+      if: github.event.schedule == '05 21 * * 0-4'
+      run: python discord_alert.py --mode morning_scan
 
-    - name: 5. 새로 생성된 CSV 리포트 및 결과 데이터 자동 커밋/푸시
+    - name: 🚀 4-2. [자동] 장 시작 전 브리핑 알람 (KST 08:33)
+      if: github.event.schedule == '33 23 * * 0-4'
+      env:
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      run: python discord_alert.py --mode morning_alert
+
+    - name: 🏁 4-3. [자동] 장 마감 복기 알람 (KST 18:30)
+      if: github.event.schedule == '30 9 * * 1-5'
+      env:
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      run: python discord_alert.py --mode afternoon
+
+    - name: 🕹️ 4-4. [수동] 버튼으로 강제 실행 (테스트용)
+      if: github.event_name == 'workflow_dispatch'
+      env:
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      # 사용자가 화면에서 선택한 모드(--mode)를 주입하여 실행합니다!
+      run: python discord_alert.py --mode ${{ inputs.mode }}
+
+    - name: 💾 5. CSV 결과 깃허브 자동 저장 (커밋)
       run: |
         git config --global user.name "GitHub Action Bot"
         git config --global user.email "action@github.com"
-        
-        # 생성되거나 업데이트된 모든 csv 파일 및 로그를 추적
-        git add *.csv data/*.csv reports/*.csv 2>/dev/null || true
-        
-        # 변경 사항이 있을 때만 깃허브 저장소에 자동으로 Push하여 백업 축적
+        git add *.csv 2>/dev/null || true
         if ! git diff --cached --quiet; then
-          git commit -m "🤖 [자동화] $(date '+%Y-%m-%d') AI Quant V7 시장 분석 CSV 리포트 갱신"
+          git commit -m "🤖 [자동화] V7 분석 데이터 업데이트"
           git push origin main
         else
-          echo "금일 생성된 새로운 데이터 변경 사항이 없습니다."
+          echo "업데이트된 데이터가 없습니다."
         fi
