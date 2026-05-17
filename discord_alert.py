@@ -25,7 +25,7 @@ warnings.filterwarnings("ignore", message="X does not have valid feature names")
 
 # 🌟 V7 다중 분류 마스터 AI 모델 구조 (3 Class)
 class SwingMasterGRU_V7(nn.Module):
-    # 🌟 [수정 완료] 입력 사이즈 14로 변경
+    # 🌟 [유지] 입력 사이즈 14로 고정 (V7 스나이퍼 규격)
     def __init__(self, input_size=14, hidden_size=128, num_layers=2):
         super(SwingMasterGRU_V7, self).__init__()
         self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True, dropout=0.5)
@@ -45,7 +45,7 @@ LGB_PATH = "weather_advisor_v7_sniper_lgb.pkl"
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def load_ensemble_models():
-    model_gru = SwingMasterGRU_V7(input_size=24)
+    model_gru = SwingMasterGRU_V7(input_size=14) # 🌟 [수정 완료] 14개 센서
     try:
         model_gru.load_state_dict(torch.load(GRU_PATH, map_location=device, weights_only=True))
         model_gru.to(device).eval()
@@ -200,7 +200,7 @@ def extract_features_v7(ticker, df_chart, macro_df):
     close, high, low, vol = df['Close'], df['High'], df['Low'], df['Volume']
     feats = pd.DataFrame(index=df.index)
     
-    # 🌟 [수정 완료] 정확히 14개의 피처만 남김!
+    # 🌟 14개 센서 규격 유지
     feats['ret'] = close.pct_change()
     feats['dist_ma'] = close / (close.rolling(20).mean() + 1e-8)
     feats['macd_hist'] = ta.trend.MACD(close).macd_diff()
@@ -224,6 +224,7 @@ def extract_features_v7(ticker, df_chart, macro_df):
         'usd_krw_ret', 'nasdaq_ret', 'kospi_ret', 'vix_ret'
     ]
     return feats[feature_cols]
+
 def process_single_ticker(ticker, name, market, mode, macro_df, model_gru, model_lgb):
     try:
         time.sleep(random.uniform(0.1, 0.5))
@@ -242,7 +243,7 @@ def process_single_ticker(ticker, name, market, mode, macro_df, model_gru, model
         scaled = RobustScaler().fit_transform(f_df.tail(60).values)
         input_t = torch.FloatTensor(scaled).unsqueeze(0).to(device)
         
-        # 🌟 V7 다중분류 해석 (Class 2: 강력매수 확률 추출)
+        # 🌟 V7 3-Class 해석
         with torch.no_grad():
             gru_probs = torch.softmax(model_gru(input_t), dim=1).cpu().numpy()[0]
         lgb_probs = model_lgb.predict(scaled[-1].reshape(1, -1))[0]
@@ -250,17 +251,21 @@ def process_single_ticker(ticker, name, market, mode, macro_df, model_gru, model
         ensemble_probs = (gru_probs * 0.5) + (lgb_probs * 0.5)
         prob_sell = ensemble_probs[0] * 100
         prob_hold = ensemble_probs[1] * 100
-        buy_prob = ensemble_probs[2] * 100 # 대시보드와 맞추기 위해 '최종확률'로 사용
+        buy_prob = ensemble_probs[2] * 100 # 최종확률 (강력매수)
         
         curr_price = int(pred_df['Close'].iloc[-1])
         tp_price = int(curr_price * 1.04)
         sl_price = int(curr_price * 0.97)
         
+        # 거래량 파워 계산 (20일 평균 대비 당일 거래량 비율)
+        vol_power = int(df['Volume'].iloc[-1] / (df['Volume'].rolling(20).mean().iloc[-1] + 1e-8) * 100)
+        
         res_dict = {
             "시장": market, "종목명": name, "코드": ticker,
-            "최종확률": buy_prob, # 스윙타점 스캐너 호환용
+            "최종확률": buy_prob, 
             "절대금지확률": prob_sell, "관망확률": prob_hold, 
-            "예측시점가격": curr_price, "목표가": tp_price, "손절가": sl_price
+            "예측시점가격": curr_price, "목표가": tp_price, "손절가": sl_price,
+            "거래량파워": vol_power
         }
         if mode == "afternoon": res_dict["오늘종가"] = int(df['Close'].iloc[-1])
             
@@ -269,29 +274,52 @@ def process_single_ticker(ticker, name, market, mode, macro_df, model_gru, model
 
 # --- 메인 스캐너 및 알람 실행 로직 ---
 def run_scanner(mode="morning_scan"):
+    # 🌟 [업그레이드 완료] 장 시작 전 (08:33) 핵심 공략주 알림
     if mode == "morning_alert":
-        print("🚀 [08:33] 장 시작 전 디스코드 알람 전송 시작...")
+        print("🚀 [08:33] 장 시작 전 디스코드 핵심 타깃 알람 전송 시작...")
         try:
             rank_df = pd.read_csv("morning_scan_result.csv")
+            
+            # S급, A급 분리
             s_class = rank_df[rank_df["최종확률"] >= 70.0].sort_values("최종확률", ascending=False)
             a_class = rank_df[(rank_df["최종확률"] >= 60.0) & (rank_df["최종확률"] < 70.0)].sort_values("최종확률", ascending=False)
             
+            # 거래량 파워(수급 몰림)가 강한 녀석들 별도 추출
+            vol_focus = rank_df[rank_df["최종확률"] >= 60.0].sort_values("거래량파워", ascending=False)
+            
             fields = []
-            if not s_class.empty:
-                fields.append({"name": "🔥 **[S급] 초고도 확신 타점 (승률 최상위)**", "value": "적극적인 비중 베팅을 고려할 만한 강력한 상승 신호입니다.", "inline": False})
-                fields.extend([{"name": f"🎯 [{row['시장']}] {row['종목명']}", "value": f"강력매수 확률: **{row['최종확률']:.1f}%**\n💵 적정가: `{row['예측시점가격']:,}원`\n🚀 목표가: `{row['목표가']:,}원` (+4%)\n🛑 손절가: `{row['손절가']:,}원` (-3%)", "inline": False} for _, row in s_class.head(5).iterrows()])
+            
+            # 1. 탑 스윙 타깃 (S급 우선, 부족하면 A급 채움)
+            top_targets = pd.concat([s_class, a_class]).head(5)
+            if not top_targets.empty:
+                target_text = ""
+                for i, row in top_targets.iterrows():
+                    target_text += f"**[ {row['종목명']} ]** (확률: {row['최종확률']:.1f}%)\n"
+                    target_text += f" └ 기준가: `{row['예측시점가격']:,}원` | 목표가: `{row['목표가']:,}원`\n\n"
+                fields.append({"name": "🎯 [AI 최선호 타깃] 당일 공략 최상위 종목", "value": target_text, "inline": False})
+            else:
+                fields.append({"name": "🛑 [관망 권장] 당일 최선호 타깃 없음", "value": "AI 확률 60%를 넘는 확실한 스윙 타점이 포착되지 않았습니다.", "inline": False})
                 
-            if not a_class.empty:
-                fields.append({"name": "🚀 **[A급] 강한 확신 타점 (승률 60%↑)**", "value": "매수 우위 구간입니다. 수급과 호가를 체크하며 진입하세요.", "inline": False})
-                fields.extend([{"name": f"✅ [{row['시장']}] {row['종목명']}", "value": f"강력매수 확률: **{row['최종확률']:.1f}%**\n💵 적정가: `{row['예측시점가격']:,}원`\n🚀 목표가: `{row['목표가']:,}원` (+4%)\n🛑 손절가: `{row['손절가']:,}원` (-3%)", "inline": False} for _, row in a_class.head(5).iterrows()])
+            # 2. 거래량 급증 예상 필수 감시 종목
+            if not vol_focus.empty:
+                vol_text = ""
+                for i, row in vol_focus.head(3).iterrows():
+                    vol_text += f"🔥 **{row['종목명']}** (거래량파워: {row['거래량파워']}% 폭발)\n"
+                fields.append({"name": "👀 [수급 집중] 장 초반 필수 감시 종목", "value": vol_text, "inline": False})
                 
-            if not fields: fields.append({"name": "🛑 **관망 권장**", "value": "오늘 장은 60% 이상 확신할 만한 S급/A급 매수 타점이 포착되지 않았습니다.", "inline": False})
-                
-            send_discord("🌅 [08:33] V7 전 종목 스캔 주도주 브리핑", fields, 15158332)
+            # 3. 당일 매매 가이드 라인 추가
+            fields.append({
+                "name": "💡 [V7 단기 스윙 전략 가이드]", 
+                "value": "• 시초가 갭이 너무 높게(+3% 이상) 뜨면 추격 매수를 자제하세요.\n• 타깃 종목의 **-3% 손절가**는 무조건 엄수하십시오.", 
+                "inline": False
+            })
+            
+            send_discord("🌅 [08:33] V7 장 시작 전 핵심 타깃 브리핑", fields, 15158332)
             print("✅ 알람 전송 완료")
         except Exception as e: print(f"❌ 알람 전송 실패: {e}")
         return 
 
+    # --- 아래부터는 새벽 스캔 및 오후 정산 로직 (기존 완벽 유지) ---
     model_gru, model_lgb = load_ensemble_models()
     if not model_gru or not model_lgb: return
     
