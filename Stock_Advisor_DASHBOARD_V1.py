@@ -315,10 +315,33 @@ def check_password():
 @st.cache_data(ttl=3600*24)
 def get_all_stock_list():
     try:
+        # 1. KRX 일반 종목 리스트 불러오기
         df_krx = fdr.StockListing('KRX')
-        df_etf = fdr.StockListing('ETF/KR').rename(columns={'Symbol':'Code'})
-        return pd.concat([df_krx['Name'] + " (" + df_krx['Code'] + ")", df_etf['Name'] + " (" + df_etf['Code'] + ")"]).dropna().tolist()
-    except: return ["삼성전자 (005930)"]
+        # 결측치(NaN) 제거 후 문자열로 안전하게 변환하여 합치기
+        krx_list = (df_krx['Name'].astype(str) + " (" + df_krx['Code'].astype(str) + ")").dropna().tolist()
+        
+        # 2. ETF 리스트 불러오기 (에러가 나도 일반 종목이라도 살리기 위해 분리)
+        try:
+            df_etf = fdr.StockListing('ETF/KR')
+            # ETF는 컬럼명이 Symbol인 경우가 많음
+            etf_code_col = 'Symbol' if 'Symbol' in df_etf.columns else 'Code'
+            etf_list = (df_etf['Name'].astype(str) + " (" + df_etf[etf_code_col].astype(str) + ")").dropna().tolist()
+        except:
+            etf_list = [] # ETF 불러오기 실패 시 빈 리스트로 둠
+            
+        # 3. 두 리스트를 안전하게 파이썬 기본 리스트 합치기로 병합
+        final_list = krx_list + etf_list
+        
+        # 4. 만약 리스트가 비어있다면 최후의 방어막 작동
+        if len(final_list) == 0:
+            return ["삼성전자 (005930)"]
+            
+        return final_list
+        
+    except Exception as e:
+        # 🌟 에러의 진짜 원인을 화면에 찍어줘서 다음번에 쉽게 고칠 수 있게 함!
+        st.error(f"종목 리스트 로드 중 에러 발생: {e}")
+        return ["삼성전자 (005930)"]
     
 @st.cache_resource
 def load_ensemble_models(gru_path, lgb_path):
