@@ -25,8 +25,10 @@ jobs:
     - name: 3. 필수 라이브러리 및 퀀트 TA 엔진 설치
       run: |
         python -m pip install --upgrade pip
+        # 🌟 PyTorch CPU 가벼운 버전 명시적 선행 설치
         pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-        pip install pandas numpy ta requests beautifulsoup4 scikit-learn
+        # 🌟 에러를 뿜었던 FinanceDataReader와 수집에 필요한 lxml/bs4를 정확한 규격명으로 강제 주입
+        pip install finance-datareader beautifulsoup4 lxml pandas numpy ta scikit-learn lightgbm joblib holidays requests
 
     - name: 4. AI Quant V7 분석 엔진 가동 & CSV 리포트 생성
       env:
