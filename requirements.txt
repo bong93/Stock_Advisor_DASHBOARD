@@ -1,0 +1,30 @@
+# --- [기본 데이터 및 분석 엔진] ---
+pandas
+numpy
+finance-datareader
+pykrx
+requests
+beautifulsoup4
+lxml
+pytz
+holidays
+
+# --- [기술적 지표 및 머신러닝] ---
+ta
+scikit-learn
+lightgbm
+joblib
+
+# --- [LLM 및 감성 분석 엔진 (V7 대시보드용)] ---
+groq
+transformers
+
+# --- [시각화 및 대시보드 (V7 대시보드용)] ---
+streamlit
+plotly
+networkx
+
+# --- [딥러닝 엔진 (클라우드 최적화)] ---
+# 🌟 스트림릿과 깃허브 서버의 메모리 초과를 막기 위해 가벼운 CPU 버전으로 강제 설치
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
