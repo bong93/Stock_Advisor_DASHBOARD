@@ -451,23 +451,19 @@ def run_scanner(mode="morning_scan"):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", type=str, required=True, choices=["morning_scan", "morning_alert", "afternoon", "monthly"])
+    # 🌟 [에러 해결] monthly 등 불필요한 옵션 제거하고 3개 모드만 정확히 매핑
+    parser.add_argument("--mode", type=str, required=True, choices=["morning_scan", "morning_alert", "afternoon"])
     args = parser.parse_args()
     
     kst = pytz.timezone('Asia/Seoul')
     now = datetime.now(kst)
     
-    if now.weekday() >= 5:
-        print(f"[{now.strftime('%Y-%m-%d')}] 주말 휴장. 봇을 종료합니다.")
-        sys.exit(0)
-        
+    # 🌟 주말 및 휴장일 체크
     kr_holidays = holidays.KR(years=now.year)
-    if now.date() in kr_holidays:
-        print(f"[{now.strftime('%Y-%m-%d')}] 법정 공휴일. 봇을 종료합니다.")
-        sys.exit(0)
-        
-    if (now.month == 5 and now.day == 1) or (now.month == 12 and now.day == 31):
-        print(f"[{now.strftime('%Y-%m-%d')}] KRX 특수 휴장일. 봇을 종료합니다.")
-        sys.exit(0)
+    is_closed = now.weekday() >= 5 or now.date() in kr_holidays or (now.month == 5 and now.day == 1) or (now.month == 12 and now.day == 31)
+    
+    if is_closed:
+        # 🌟 [수정 완료] sys.exit(0)로 봇을 죽이지 않고, 직전 거래일 기준으로 쿨하게 돌아가도록 변경!
+        print(f"⚠️ [{now.strftime('%Y-%m-%d')}] 휴장일 감지됨: 직전 거래일(금요일 등)의 확정 데이터를 기준으로 스캔 및 테스트를 진행합니다!")
         
     run_scanner(args.mode)
