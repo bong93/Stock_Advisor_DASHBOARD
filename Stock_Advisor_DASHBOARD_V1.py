@@ -899,8 +899,8 @@ def get_market_signal_lamp(macro_df):
     return lamp_results
     
 # --- 5. 메인 실행부 ---
-GRU_PATH = r"weather_advisor_v6_master_D.pt"
-LGB_PATH = r"weather_advisor_v6_master_D_lgb.pkl"
+GRU_PATH = r"weather_advisor_v7_sniper.pt"
+LGB_PATH = r"weather_advisor_v7_sniper_lgb.pkl"
 RESULT_CSV = r"morning_scan_result.csv" # 🌟 사전 분석 결과 파일명
 # 🌟 [추가] 섹터, 테마, ETF CSV 파일 경로
 SECTOR_UP_CSV = r"sector_upjong.csv"
