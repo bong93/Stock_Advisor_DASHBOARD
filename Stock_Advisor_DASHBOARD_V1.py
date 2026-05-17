@@ -315,33 +315,50 @@ def check_password():
 @st.cache_data(ttl=3600*24)
 def get_all_stock_list():
     try:
-        # 1. KRX 일반 종목 리스트 불러오기
+        # 🛡️ 1차 방어막: KRX 공식 서버에서 전체 종목 가져오기 시도
         df_krx = fdr.StockListing('KRX')
-        # 결측치(NaN) 제거 후 문자열로 안전하게 변환하여 합치기
         krx_list = (df_krx['Name'].astype(str) + " (" + df_krx['Code'].astype(str) + ")").dropna().tolist()
         
-        # 2. ETF 리스트 불러오기 (에러가 나도 일반 종목이라도 살리기 위해 분리)
         try:
             df_etf = fdr.StockListing('ETF/KR')
-            # ETF는 컬럼명이 Symbol인 경우가 많음
             etf_code_col = 'Symbol' if 'Symbol' in df_etf.columns else 'Code'
             etf_list = (df_etf['Name'].astype(str) + " (" + df_etf[etf_code_col].astype(str) + ")").dropna().tolist()
         except:
-            etf_list = [] # ETF 불러오기 실패 시 빈 리스트로 둠
+            etf_list = [] 
             
-        # 3. 두 리스트를 안전하게 파이썬 기본 리스트 합치기로 병합
         final_list = krx_list + etf_list
-        
-        # 4. 만약 리스트가 비어있다면 최후의 방어막 작동
-        if len(final_list) == 0:
-            return ["삼성전자 (005930)"]
+        if len(final_list) > 0:
+            return final_list
             
-        return final_list
-        
-    except Exception as e:
-        # 🌟 에러의 진짜 원인을 화면에 찍어줘서 다음번에 쉽게 고칠 수 있게 함!
-        st.error(f"종목 리스트 로드 중 에러 발생: {e}")
-        return ["삼성전자 (005930)"]
+    except Exception:
+        pass # KRX 서버가 죽었거나 해외 IP가 막히면 조용히 2차 방어막으로 넘어갑니다.
+
+    try:
+        # 🛡️ 2차 방어막: 깃허브 봇이 스캔해서 저장해둔 CSV 파일(장부)에서 종목명 긁어오기
+        fallback_list = []
+        if os.path.exists("morning_scan_result.csv"):
+            scan_df = pd.read_csv("morning_scan_result.csv")
+            scan_list = (scan_df['종목명'].astype(str) + " (" + scan_df['코드'].astype(str).str.zfill(6) + ")").tolist()
+            fallback_list.extend(scan_list)
+            
+        if os.path.exists("etf_scanner_result.csv"):
+            etf_df = pd.read_csv("etf_scanner_result.csv")
+            etf_scan_list = (etf_df['종목명'].astype(str) + " (" + etf_df['코드'].astype(str).str.zfill(6) + ")").tolist()
+            fallback_list.extend(etf_scan_list)
+            
+        if fallback_list:
+            st.toast("⚠️ 현재 한국거래소(KRX) 서버 점검으로 인해, AI가 분석 완료한 핵심 종목 리스트만 임시로 제공됩니다.")
+            return list(set(fallback_list)) # 중복 제거 후 반환
+    except:
+        pass
+
+    # 🛡️ 3차 방어막: 최악의 상황에서도 검색창이 비어있지 않도록 필수 우량주 하드코딩 제공
+    st.warning("⚠️ 한국거래소(KRX) 서버 응답 지연으로 전체 종목을 불러오지 못했습니다. 필수 우량주 리스트로 대체합니다.")
+    return [
+        "삼성전자 (005930)", "SK하이닉스 (000660)", "LG에너지솔루션 (373220)", "삼성바이오로직스 (207940)",
+        "현대차 (005380)", "기아 (000270)", "POSCO홀딩스 (005490)", "NAVER (035420)", "카카오 (035720)",
+        "에코프로비엠 (247540)", "에코프로 (086520)", "셀트리온 (068270)"
+    ]
     
 @st.cache_resource
 def load_ensemble_models(gru_path, lgb_path):
