@@ -66,11 +66,11 @@ def apply_jurin_help(text):
 
 # --- 1. 🌟 [V7 업데이트] 다중 분류 마스터 AI 모델 구조 (Class 3) ---
 class SwingMasterGRU_V7(nn.Module):
-    def __init__(self, input_size=24, hidden_size=128, num_layers=2):
+    # 🌟 [수정 완료] 입력 사이즈를 24에서 학습된 뇌와 동일한 14로 변경!
+    def __init__(self, input_size=14, hidden_size=128, num_layers=2):
         super(SwingMasterGRU_V7, self).__init__()
         self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True, dropout=0.5)
         self.attention = nn.Linear(hidden_size, 1)
-        # 🌟 출력층이 3(절대금지, 관망, 강력매수)으로 변경됨!
         self.fc = nn.Sequential(nn.Linear(hidden_size, 64), nn.ReLU(), nn.Dropout(0.3), nn.Linear(64, 3))
         
     def forward(self, x):
@@ -423,27 +423,32 @@ def prepare_master_features(ticker, df_chart, macro_df):
 
     close, high, low, vol = df['Close'], df['High'], df['Low'], df['Volume']
     feats = pd.DataFrame(index=df.index)
-    feats['ret'], feats['dist_ma'] = close.pct_change(), close / (close.rolling(20).mean() + 1e-8)
+    
+    # 🌟 [수정 완료] 학습 때 사용했던 정확히 14개의 피처만 남깁니다!
+    feats['ret'] = close.pct_change()
+    feats['dist_ma'] = close / (close.rolling(20).mean() + 1e-8)
     feats['macd_hist'] = ta.trend.MACD(close).macd_diff()
-    feats['adx'], feats['rsi'] = ta.trend.ADXIndicator(high, low, close).adx() / 100.0, ta.momentum.RSIIndicator(close).rsi() / 100.0
+    feats['rsi'] = ta.momentum.RSIIndicator(close).rsi() / 100.0
     feats['stoch'] = ta.momentum.StochasticOscillator(high, low, close).stoch() / 100.0
-    feats['bb_pband'], feats['atr_pct'] = ta.volatility.BollingerBands(close).bollinger_pband(), ta.volatility.AverageTrueRange(high, low, close).average_true_range() / (close + 1e-8)
-    feats['obv_ret'], feats['mfi'] = ta.volume.OnBalanceVolumeIndicator(close, vol).on_balance_volume().pct_change(), ta.volume.MFIIndicator(high, low, close, vol).money_flow_index() / 100.0
-    feats['bb_width'], feats['cci'] = ta.volatility.BollingerBands(close).bollinger_wband() / 100.0, ta.trend.CCIIndicator(high, low, close).cci() / 100.0
-    feats['roc'], feats['cmf'] = ta.momentum.ROCIndicator(close).roc() / 100.0, ta.volume.ChaikinMoneyFlowIndicator(high, low, close, vol).chaikin_money_flow()
+    feats['bb_pband'] = ta.volatility.BollingerBands(close).bollinger_pband()
+    feats['atr_pct'] = ta.volatility.AverageTrueRange(high, low, close).average_true_range() / (close + 1e-8)
+    feats['mfi'] = ta.volume.MFIIndicator(high, low, close, vol).money_flow_index() / 100.0
+    feats['cci'] = ta.trend.CCIIndicator(high, low, close).cci() / 100.0
     feats['will_r'] = ta.momentum.WilliamsRIndicator(high, low, close).williams_r() / -100.0
     
-    feats['inst_ratio'], feats['foreigner_ratio'] = df['inst_net'] / (vol + 1e-8), df['foreigner_net'] / (vol + 1e-8)
-    feats['inst_ratio_5d'] = df['inst_net'].rolling(5).sum() / (vol.rolling(5).sum() + 1e-8)
-    feats['foreigner_ratio_5d'] = df['foreigner_net'].rolling(5).sum() / (vol.rolling(5).sum() + 1e-8)
-    for col in ['usd_krw_ret', 'nasdaq_ret', 'kospi_ret', 'kosdaq_ret', 'vix_ret']: feats[col] = df[col]
+    for col in ['usd_krw_ret', 'nasdaq_ret', 'kospi_ret', 'vix_ret']: 
+        if col in df.columns: feats[col] = df[col]
+        else: feats[col] = 0.0
     
     feats.replace([np.inf, -np.inf], np.nan, inplace=True); feats.dropna(inplace=True)
     
-    feature_cols = ['ret', 'dist_ma', 'macd_hist', 'adx', 'rsi', 'stoch', 'bb_pband', 'atr_pct', 'obv_ret', 'mfi', 'bb_width', 'cci', 'roc', 'cmf', 'will_r', 'inst_ratio', 'foreigner_ratio', 'inst_ratio_5d', 'foreigner_ratio_5d', 'usd_krw_ret', 'nasdaq_ret', 'kospi_ret', 'kosdaq_ret', 'vix_ret']
+    feature_cols = ['ret', 'dist_ma', 'macd_hist', 'rsi', 'stoch', 'bb_pband', 'atr_pct', 'mfi', 'cci', 'will_r', 'usd_krw_ret', 'nasdaq_ret', 'kospi_ret', 'vix_ret']
     
+    inst_r = (df['inst_net'].iloc[-1] / (vol.iloc[-1] + 1e-8)) if 'inst_net' in df else 0
+    for_r = (df['foreigner_net'].iloc[-1] / (vol.iloc[-1] + 1e-8)) if 'foreigner_net' in df else 0
+
     if len(feats) == 0: return feats, None, 0, 0, df_plot
-    return feats[feature_cols], df.index[-1].strftime('%Y-%m-%d'), feats['inst_ratio'].iloc[-1], feats['foreigner_ratio'].iloc[-1], df_plot
+    return feats[feature_cols], df.index[-1].strftime('%Y-%m-%d'), inst_r, for_r, df_plot
 
 def draw_ichimoku_chart(df_plot):
     fig = go.Figure()
