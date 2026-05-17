@@ -899,8 +899,8 @@ def get_market_signal_lamp(macro_df):
     return lamp_results
     
 # --- 5. 메인 실행부 ---
-GRU_PATH = r"weather_advisor_v7_sniper.pt"
-LGB_PATH = r"weather_advisor_v7_sniper_lgb.pkl"
+GRU_PATH = r"weather_advisor_v6_master_D.pt"
+LGB_PATH = r"weather_advisor_v6_master_D_lgb.pkl"
 RESULT_CSV = r"morning_scan_result.csv" # 🌟 사전 분석 결과 파일명
 # 🌟 [추가] 섹터, 테마, ETF CSV 파일 경로
 SECTOR_UP_CSV = r"sector_upjong.csv"
@@ -1181,13 +1181,26 @@ if check_password():
                         
                         with col2:
                             is_simulated = sim_nasdaq != 0 or sim_usdkrw != 0 or sim_vix != 0
-                            title_prefix = "🔬 [시뮬레이션 적용됨]" if is_simulated else "1차: 2 AI 앙상블"
-                            
+                            title_prefix = "🔬 [시뮬레이션 적용됨]" if is_simulated else "1차: V7 AI 타점 (원형 그래프)"
                             st.subheader(title_prefix)
-                            cA, cB, cC = st.columns(3)
-                            cA.metric("GRU", f"{gru_prob*100:.1f}%")
-                            cB.metric("LGBM", f"{lgb_prob*100:.1f}%")
-                            cC.metric("기본 확률", f"{base_prob_pct:.1f}%")
+                            
+                            # 🌟 V7 다중 분류용 파이(도넛) 차트
+                            labels = ['🚨 절대 금지 (위험)', '⏸️ 관망 (횡보)', '🔥 강력 매수 (급등)']
+                            values = [prob_sell, prob_hold, prob_buy]
+                            colors = ['#1C83E1', '#AAAAAA', '#FF4B4B']
+                            
+                            fig_pie = go.Figure(data=[go.Pie(labels=labels, values=values, hole=.5, marker_colors=colors, textinfo='label+percent', textfont_size=13)])
+                            fig_pie.update_layout(margin=dict(t=20, b=10, l=10, r=10), height=250, template='plotly_dark', showlegend=False)
+                            st.plotly_chart(fig_pie, use_container_width=True)
+                            
+                            # 🌟 [신규 추가] V7 스나이퍼 전략 명시 캘린더/배너 UI
+                            st.markdown(f"""
+                            <div style="background-color: #262636; padding: 12px; border-radius: 8px; border-left: 4px solid #FF4B4B; margin-bottom: 15px;">
+                                <span style="font-size: 12px; color: #00E676; font-weight: bold;">🏹 V7 SNIPER STRATEGY</span><br>
+                                <span style="font-size: 14px; font-weight: bold; color: #FFFFFF;">타겟 윈도우: 단기 5거래일 스윙 (1주일)</span><br>
+                                <span style="font-size: 12px; color: #A0A0B0;">본 확률은 5일 이내에 <strong>KOSPI 지수 대비 +3% 이상 초과 수익</strong>을 달성할 모델의 확신도입니다.</span>
+                            </div>
+                            """, unsafe_allow_html=True)
                             
                             st.markdown("---")
                             st.subheader("📰 2차: 뉴스 센티먼트 융합")
@@ -1200,27 +1213,16 @@ if check_password():
                             cF.metric("최종 확신도", f"{final_prob_pct:.1f}%", delta=delta_str, delta_color="inverse")
                             
                             st.markdown("---")
-                            st.subheader(f"🎯 {timeframe.split(' ')[0]} 매매 가이드")
+                            st.subheader(f"🎯 V7 스윙 매매 가이드") # 타임프레임 텍스트 의존성 제거, 5일 스윙 고정
                             
-                            if timeframe == "일봉 (단기 5일)":
-                                tp_rate, sl_rate = 4.0, -3.0
-                            elif timeframe == "주봉 (중기 4주)":
-                                tp_rate, sl_rate = 8.0, -5.0
-                            else: # 월봉 (장기 3개월)
-                                tp_rate, sl_rate = 12.0, -10.0
-                                
+                            # V7 알고리즘 구조에 맞게 목표가 및 손절가 고정 산출
+                            tp_rate, sl_rate = 4.0, -3.0
                             target_price = curr_p * (1 + (tp_rate / 100))
                             stop_loss = curr_p * (1 + (sl_rate / 100))
                             
-                            # 🌟 [수정 완료] 거대한 st.metric 대신 깔끔한 텍스트 리스트로 통일
-                            st.write(f"- 적정 매수가: `{int(curr_p):,}원`")
-                            st.write(f"- 목표가 (+{tp_rate}%): `{int(target_price):,}원`")
-                            st.write(f"- 손절가 ({sl_rate}%): `{int(stop_loss):,}원`")
-                                                                            
-                            st.markdown("---")
-                            st.write(f"📊 실시간 수급 (비중)")
-                            st.write(f"- 외국인: {f_r * 100:+.2f}%")
-                            st.write(f"- 기  관: {i_r * 100:+.2f}%")
+                            st.write(f"- 적정 매수가: `{int(curr_p):,}원` (시초가 혹은 분할 진입)")
+                            st.write(f"- 5일 목표가 (+{tp_rate}%): `{int(target_price):,}원` (지수 연동 분할 청산)")
+                            st.write(f"- 5일 손절가 ({sl_rate}%): `{int(stop_loss):,}원` (종가 기준 칼손절)")
 
                     st.markdown("---")
                     st.subheader(f"📰 {name} 주요 최신 뉴스 (표본 100개 중 최신 10개)")
