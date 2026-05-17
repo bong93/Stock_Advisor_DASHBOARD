@@ -1,0 +1,55 @@
+name: AI Quant V7 Daily Analyzer & CSV Generator
+
+on:
+  schedule:
+    # 매일 월요일~금요일 한국 시간(KST) 저녁 6시 30분에 정기 실행 (UTC 09:30)
+    - cron: '30 9 * * 1-5'
+  workflow_dispatch: # 깃허브 웹사이트에서 수동으로 즉시 실행하고 싶을 때 사용하는 버튼 활성화
+
+jobs:
+  analyze_and_report:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 1. 깃허브 저장소 코드 체크아웃
+      uses: actions/checkout@v3
+      with:
+        persist-credentials: true # CSV 자동 저장을 위해 쓰기 권한 유지
+
+    - name: 2. 파이썬 환경 설정 (Python 3.10)
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        cache: 'pip' # 패키지 다운로드 속도 향상을 위한 캐싱
+
+    - name: 3. 필수 라이브러리 및 퀀트 TA 엔진 설치
+      run: |
+        python -m pip install --upgrade pip
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+        pip install pandas numpy ta requests beautifulsoup4 scikit-learn
+
+    - name: 4. AI Quant V7 분석 엔진 가동 & CSV 리포트 생성
+      env:
+        # 디스코드 웹훅 주소 및 필요한 보안 키가 있다면 여기에 연동합니다.
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        # LLAMA3 등의 API를 쓰신다면 아래 주석을 풀고 레포지토리 세크릿에 등록하시면 됩니다.
+        # LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
+      run: |
+        # 🌟 V7 봇을 실행하여 Naver 금융 수집 -> 14개 피처 가공 -> CSV 저장 -> 디스코드 전송 프로세스 수행
+        python discord_alert.py
+
+    - name: 5. 새로 생성된 CSV 리포트 및 결과 데이터 자동 커밋/푸시
+      run: |
+        git config --global user.name "GitHub Action Bot"
+        git config --global user.email "action@github.com"
+        
+        # 생성되거나 업데이트된 모든 csv 파일 및 로그를 추적
+        git add *.csv data/*.csv reports/*.csv 2>/dev/null || true
+        
+        # 변경 사항이 있을 때만 깃허브 저장소에 자동으로 Push하여 백업 축적
+        if ! git diff --cached --quiet; then
+          git commit -m "🤖 [자동화] $(date '+%Y-%m-%d') AI Quant V7 시장 분석 CSV 리포트 갱신"
+          git push origin main
+        else
+          echo "금일 생성된 새로운 데이터 변경 사항이 없습니다."
+        fi
