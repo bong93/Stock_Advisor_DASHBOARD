@@ -36,7 +36,7 @@ st.markdown("""
 <style>
     div[data-baseweb="tab-list"] { display: flex; flex-wrap: wrap; gap: 5px; }
     @media (max-width: 600px) {
-        h1 { font-size: 24px !important; }
+        h1 { font-size: px !important; }
         h2 { font-size: 20px !important; }
         h3 { font-size: 18px !important; }
         div[data-testid="stMetricValue"] { font-size: 22px !important; }
@@ -66,7 +66,7 @@ def apply_jurin_help(text):
 
 # --- 1. 🌟 [V7 업데이트] 다중 분류 마스터 AI 모델 구조 (Class 3) ---
 class SwingMasterGRU_V7(nn.Module):
-    # 🌟 [수정 완료] 입력 사이즈를 24에서 학습된 뇌와 동일한 14로 변경!
+    # 🌟 [수정 완료] 입력 사이즈를 에서 학습된 뇌와 동일한 14로 변경!
     def __init__(self, input_size=14, hidden_size=128, num_layers=2):
         super(SwingMasterGRU_V7, self).__init__()
         self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True, dropout=0.5)
@@ -323,7 +323,7 @@ def get_all_stock_list():
 @st.cache_resource
 def load_ensemble_models(gru_path, lgb_path):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model_gru = SwingMasterGRU_V7(input_size=24) # 🌟 V7 3클래스 모델 장착!
+    model_gru = SwingMasterGRU_V7(input_size=14) # 🌟 V7 3클래스 모델 장착!
     try:
         if not os.path.exists(gru_path) or not os.path.exists(lgb_path): 
             return None, None, device
