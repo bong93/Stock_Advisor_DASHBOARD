@@ -23,9 +23,8 @@ import lightgbm as lgb
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings("ignore", message="X does not have valid feature names")
 
-# 🌟 V7 다중 분류 마스터 AI 모델 구조 (3 Class)
+# 🌟 V7 다중 분류 마스터 AI 모델 구조 (14 Features, 3 Class)
 class SwingMasterGRU_V7(nn.Module):
-    # 🌟 [유지] 입력 사이즈 14로 고정 (V7 스나이퍼 규격)
     def __init__(self, input_size=14, hidden_size=128, num_layers=2):
         super(SwingMasterGRU_V7, self).__init__()
         self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True, dropout=0.5)
@@ -45,14 +44,14 @@ LGB_PATH = "weather_advisor_v7_sniper_lgb.pkl"
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def load_ensemble_models():
-    model_gru = SwingMasterGRU_V7(input_size=14) # 🌟 [수정 완료] 14개 센서
+    model_gru = SwingMasterGRU_V7(input_size=14)
     try:
         model_gru.load_state_dict(torch.load(GRU_PATH, map_location=device, weights_only=True))
         model_gru.to(device).eval()
         model_lgb = joblib.load(LGB_PATH)
         return model_gru, model_lgb
     except Exception as e:
-        print(f"모델 로드 실패: {e}")
+        print(f"❌ 모델 로드 실패: {e}")
         return None, None
 
 def send_discord(title, fields_data, color):
@@ -274,23 +273,18 @@ def process_single_ticker(ticker, name, market, mode, macro_df, model_gru, model
 
 # --- 메인 스캐너 및 알람 실행 로직 ---
 def run_scanner(mode="morning_scan"):
-    # 🌟 [업그레이드 완료] 장 시작 전 (08:33) 핵심 공략주 알림
+    # 🌟 [장 시작 전 알림 모드]
     if mode == "morning_alert":
         print("🚀 [08:33] 장 시작 전 디스코드 핵심 타깃 알람 전송 시작...")
         try:
             rank_df = pd.read_csv("morning_scan_result.csv")
-            
-            # S급, A급 분리
             s_class = rank_df[rank_df["최종확률"] >= 70.0].sort_values("최종확률", ascending=False)
             a_class = rank_df[(rank_df["최종확률"] >= 60.0) & (rank_df["최종확률"] < 70.0)].sort_values("최종확률", ascending=False)
-            
-            # 거래량 파워(수급 몰림)가 강한 녀석들 별도 추출
             vol_focus = rank_df[rank_df["최종확률"] >= 60.0].sort_values("거래량파워", ascending=False)
             
             fields = []
-            
-            # 1. 탑 스윙 타깃 (S급 우선, 부족하면 A급 채움)
             top_targets = pd.concat([s_class, a_class]).head(5)
+            
             if not top_targets.empty:
                 target_text = ""
                 for i, row in top_targets.iterrows():
@@ -300,14 +294,12 @@ def run_scanner(mode="morning_scan"):
             else:
                 fields.append({"name": "🛑 [관망 권장] 당일 최선호 타깃 없음", "value": "AI 확률 60%를 넘는 확실한 스윙 타점이 포착되지 않았습니다.", "inline": False})
                 
-            # 2. 거래량 급증 예상 필수 감시 종목
             if not vol_focus.empty:
                 vol_text = ""
                 for i, row in vol_focus.head(3).iterrows():
                     vol_text += f"🔥 **{row['종목명']}** (거래량파워: {row['거래량파워']}% 폭발)\n"
                 fields.append({"name": "👀 [수급 집중] 장 초반 필수 감시 종목", "value": vol_text, "inline": False})
                 
-            # 3. 당일 매매 가이드 라인 추가
             fields.append({
                 "name": "💡 [V7 단기 스윙 전략 가이드]", 
                 "value": "• 시초가 갭이 너무 높게(+3% 이상) 뜨면 추격 매수를 자제하세요.\n• 타깃 종목의 **-3% 손절가**는 무조건 엄수하십시오.", 
@@ -319,7 +311,7 @@ def run_scanner(mode="morning_scan"):
         except Exception as e: print(f"❌ 알람 전송 실패: {e}")
         return 
 
-    # --- 아래부터는 새벽 스캔 및 오후 정산 로직 (기존 완벽 유지) ---
+    # --- 데이터 수집 및 분석 메인 파이프라인 ---
     model_gru, model_lgb = load_ensemble_models()
     if not model_gru or not model_lgb: return
     
@@ -347,7 +339,7 @@ def run_scanner(mode="morning_scan"):
     rank_df = pd.DataFrame(results)
     if rank_df.empty: return
 
-    # 🌟 [새벽 모드] 데이터 수집 및 CSV 굽기
+    # 🌟 [새벽 모드: CSV 굽기]
     if mode == "morning_scan":
         rank_df.to_csv("morning_scan_result.csv", index=False, encoding='utf-8-sig')
         print("✅ [1/3] V7 스캔 결과 CSV 저장 완료")
@@ -375,13 +367,12 @@ def run_scanner(mode="morning_scan"):
             print("✅ [3/3] ETF CSV 저장 완료")
         except: pass
 
-    # 🌟 [오후 모드] 장 마감 복기 및 모의투자 장부 업데이트
+    # 🌟 [오후 모드: 장 마감 복기]
     elif mode == "afternoon":
         picks = rank_df[rank_df["최종확률"] >= 60.0].sort_values("최종확률", ascending=False)
         bottom_picks = rank_df.sort_values("최종확률", ascending=True).head(10)
         fields = []
 
-        # 모의투자 장부 작성
         HISTORY_CSV = "mock_invest_history.csv"
         now = datetime.now(pytz.timezone('Asia/Seoul'))
         today_str, curr_year = now.strftime('%Y-%m-%d'), now.year
@@ -451,19 +442,19 @@ def run_scanner(mode="morning_scan"):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    # 🌟 [에러 해결] monthly 등 불필요한 옵션 제거하고 3개 모드만 정확히 매핑
+    # 🌟 [수정 완료] 3가지 모드 정확히 매핑
     parser.add_argument("--mode", type=str, required=True, choices=["morning_scan", "morning_alert", "afternoon"])
     args = parser.parse_args()
     
     kst = pytz.timezone('Asia/Seoul')
     now = datetime.now(kst)
     
-    # 🌟 주말 및 휴장일 체크
+    # 🌟 [수정 완료] 주말 및 공휴일 체크 로직 (테스트 우회 가능)
     kr_holidays = holidays.KR(years=now.year)
     is_closed = now.weekday() >= 5 or now.date() in kr_holidays or (now.month == 5 and now.day == 1) or (now.month == 12 and now.day == 31)
     
     if is_closed:
-        # 🌟 [수정 완료] sys.exit(0)로 봇을 죽이지 않고, 직전 거래일 기준으로 쿨하게 돌아가도록 변경!
-        print(f"⚠️ [{now.strftime('%Y-%m-%d')}] 휴장일 감지됨: 직전 거래일(금요일 등)의 확정 데이터를 기준으로 스캔 및 테스트를 진행합니다!")
+        print(f"⚠️ [{now.strftime('%Y-%m-%d')}] 휴장일 감지됨: 직전 거래일의 확정 데이터를 기준으로 스캔 및 테스트를 진행합니다!")
+        # sys.exit() 없이 통과하여 주말 테스트 허용
         
     run_scanner(args.mode)
