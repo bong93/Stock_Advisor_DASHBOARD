@@ -2,14 +2,17 @@ name: AI Quant V7 Daily Bot
 
 on:
   schedule:
-    # 1. 새벽 전 종목 스캔 (KST 06:05 / UTC 21:05) -> 트래픽 한가함 (유지)
+    # 🌟 1. 새벽 6시 05분 (KST) - [2시간짜리 크롤링 노가다 사전 실행]
+    # 장 열리기 전 트래픽 한가할 때 스캔을 돌려 CSV 파일로 구워둡니다.
     - cron: '05 21 * * 0-4'
     
-    # 🌟 2. 아침 스윙 타깃 알림 (KST 08:00 / UTC 23:00) -> 글로벌 자정 트래픽 전으로 대폭 앞당김!
-    - cron: '00 23 * * 0-4'
+    # 🌟 2. 아침 8시 33분 (KST) - [즉시 알람 발송]
+    # 크롤링 없이 아까 구워둔 CSV만 1초 만에 쏙 읽어서 S/A급 공략주만 디스코드로 쏩니다.
+    - cron: '33 23 * * 0-4'
     
-    # 3. 장 마감 복기 (KST 18:30 / UTC 09:30) -> 트래픽 한가함 (유지)
-    - cron: '30 9 * * 1-5'
+    # 🌟 3. 오후 3시 30분 (KST) - [마감 크롤링 및 정산]
+    # 장 마감 직후 2시간 크롤링 시작 -> 오후 5시 30분쯤에 정산 알람이 휴대폰으로 도착합니다!
+    - cron: '30 6 * * 1-5'
   
   workflow_dispatch:
     inputs:
@@ -55,8 +58,8 @@ jobs:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: python discord_alert.py --mode morning_alert
 
-    - name: 🏁 4-3. [자동] 장 마감 복기 알람 (KST 18:30)
-      if: github.event.schedule == '30 9 * * 1-5'
+    - name: 🏁 4-3. [자동] 장 마감 복기 알람 (오후 3시 30분 시작 -> 5시 반 완료)
+      if: github.event.schedule == '30 6 * * 1-5'
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: python discord_alert.py --mode afternoon
@@ -65,7 +68,6 @@ jobs:
       if: github.event_name == 'workflow_dispatch'
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      # 사용자가 화면에서 선택한 모드(--mode)를 주입하여 실행합니다!
       run: python discord_alert.py --mode ${{ inputs.mode }}
 
     - name: 💾 5. CSV 결과 깃허브 자동 저장 (커밋)
